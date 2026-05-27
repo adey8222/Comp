@@ -57,6 +57,8 @@ Streamlit runs a **Python** edition of CIP (upload + dashboard in-session). It d
 | `streamlit_app.py` | Yes — main file on [share.streamlit.io](https://share.streamlit.io) |
 | `requirements.txt` | Yes — Python dependencies |
 | `cip_normalize.py` | Yes — import / FX / rules |
+| `cip_dashboard.py` | Yes — dashboard stats / tables |
+| `data/compensation_employee_dataset_updated.xlsx` | Yes — auto-loaded on startup (no manual import) |
 | `.streamlit/config.toml` | Optional — theme |
 | `packages.txt` | Optional — only if you need `apt-get` system libs |
 

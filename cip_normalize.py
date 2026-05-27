@@ -232,13 +232,9 @@ def normalize_raw_row(raw: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def load_and_normalize(uploaded: Any) -> tuple[pd.DataFrame, list[str]]:
-    name = (uploaded.name or "").lower()
-    if name.endswith(".csv"):
-        raw = pd.read_csv(uploaded)
-    else:
-        raw = pd.read_excel(uploaded, engine="openpyxl")
+def normalize_dataframe(raw: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     mapped = map_headers(list(raw.columns))
+    raw = raw.copy()
     raw.columns = mapped
     errors: list[str] = []
     rows: list[dict[str, Any]] = []
@@ -249,5 +245,23 @@ def load_and_normalize(uploaded: Any) -> tuple[pd.DataFrame, list[str]]:
             errors.append(f"Row {int(i) + 2}: {e}")
     if not rows:
         return pd.DataFrame(), errors
-    df = pd.DataFrame(rows)
-    return df, errors
+    return pd.DataFrame(rows), errors
+
+
+def load_and_normalize(uploaded: Any) -> tuple[pd.DataFrame, list[str]]:
+    name = (getattr(uploaded, "name", None) or "").lower()
+    if name.endswith(".csv"):
+        raw = pd.read_csv(uploaded)
+    else:
+        raw = pd.read_excel(uploaded, engine="openpyxl")
+    return normalize_dataframe(raw)
+
+
+def load_from_path(path: str | os.PathLike[str]) -> tuple[pd.DataFrame, list[str]]:
+    p = os.fspath(path)
+    lower = p.lower()
+    if lower.endswith(".csv"):
+        raw = pd.read_csv(p)
+    else:
+        raw = pd.read_excel(p, engine="openpyxl")
+    return normalize_dataframe(raw)
