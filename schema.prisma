@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  HR_ADMIN
+  MANAGER
+  EXECUTIVE
+}
+
+enum Currency {
+  USD
+  ILS
+  CAD
+  AUD
+  EUR
+  GBP
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String?
+  role              UserRole  @default(HR_ADMIN)
+  departmentScope   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  auditLogs         AuditLog[]
+}
+
+model ImportBatch {
+  id            String       @id @default(cuid())
+  source        String
+  fileName      String?
+  status        ImportStatus @default(COMPLETED)
+  rowCount      Int          @default(0)
+  errorSummary  String?
+  createdAt     DateTime     @default(now())
+  employees     Employee[]
+}
+
+model Employee {
+  id                     String    @id @default(cuid())
+  department             String
+  fullName               String
+  companyEmail           String
+  jobTitle               String
+  officeLocation         String
+  region                 String
+  startDate              DateTime
+  employeeType           String
+  userStatus             String
+
+  performanceBand        String?
+
+  currentSalaryCurrency  Currency
+  eligibility            Boolean
+  currentSalary          Decimal
+
+  bonusAwardedPct        Decimal
+  sumOfBonus             Decimal
+  salaryPercentage       Decimal
+  salaryIncreaseAmount   Decimal
+
+  usdCurrentSalary       Decimal
+  usdSumOfBonus          Decimal
+  usdSalaryPercentage    Decimal
+  usdSalaryIncreaseAmt   Decimal
+
+  recBonusPctMin         Decimal?
+  recBonusPctMax         Decimal?
+  recRaisePctMin         Decimal?
+  recRaisePctMax         Decimal?
+
+  importBatchId          String
+  importBatch            ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([department])
+  @@index([companyEmail])
+  @@index([importBatchId])
+}
+
+model CompensationRuleSet {
+  id        String   @id @default(cuid())
+  name      String
+  rulesJson Json
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
