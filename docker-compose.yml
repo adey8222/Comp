@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cip
+      POSTGRES_PASSWORD: cip
+      POSTGRES_DB: cip
+    ports:
+      - "5432:5432"
+    volumes:
+      - cip_pg:/var/lib/postgresql/data
+
+volumes:
+  cip_pg:
