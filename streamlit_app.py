@@ -22,6 +22,7 @@ from cip_dashboard import (
     render_currency_table,
     render_department_employees_table,
     render_department_table,
+    render_employees_roster_table,
     render_metric_row,
 )
 from cip_import import commit_merge_by_email, preview_import
@@ -153,6 +154,32 @@ div[data-testid="stFileUploader"] section {
 div[data-testid="stFileUploader"] label p {
     color: #a1a1aa !important; font-size: 0.8rem !important;
 }
+.emp-toolbar {
+    padding: 1rem 1.25rem; margin-bottom: 1rem;
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 20px;
+    background: rgba(15,23,42,0.55);
+}
+.cip-table-roster { min-width: 960px; }
+.cip-table .dept-cell { color: #d4d4d8; }
+div[data-testid="stTextInput"] input {
+    background: rgba(0,0,0,0.4) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 12px !important;
+    color: #f4f4f5 !important;
+}
+div[data-testid="stTextInput"] input::placeholder { color: #71717a !important; }
+div[data-testid="stForm"] {
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 20px !important;
+    background: rgba(15,23,42,0.55) !important;
+    padding: 1rem 1.25rem !important;
+}
+.stDownloadButton > button {
+    border: 1px solid rgba(255,255,255,0.15) !important;
+    background: rgba(15,23,42,0.8) !important;
+    color: #e4e4e7 !important;
+    border-radius: 12px !important;
+}
 </style>
 """
 
@@ -169,6 +196,7 @@ def init_session() -> None:
         "import_message": None,
         "import_preview": None,
         "import_file_sig": None,
+        "emp_q": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -382,68 +410,54 @@ elif page == "Import":
                 st.rerun()
 
 elif page == "Employees":
-    st.header("Employees")
     if df is None or df.empty:
         st.info("No roster loaded.")
     else:
-        q = st.text_input("Search name, email, or department")
-        view = df.copy()
-        if q.strip():
-            mask = (
-                view["fullName"].str.contains(q, case=False, na=False)
-                | view["companyEmail"].str.contains(q, case=False, na=False)
-                | view["department"].str.contains(q, case=False, na=False)
+        bar_a, bar_b, bar_c = st.columns([4, 1, 1])
+        with bar_a:
+            q_input = st.text_input(
+                "Search",
+                value=st.session_state.emp_q,
+                placeholder="Search name or email…",
+                label_visibility="collapsed",
+                key="employees_search_input",
             )
+        with bar_b:
+            st.markdown("<div style='height:0.35rem'></div>", unsafe_allow_html=True)
+            if st.button("Search", type="primary", use_container_width=True):
+                st.session_state.emp_q = q_input.strip()
+
+        view = df.sort_values("fullName")
+        q = st.session_state.emp_q
+        if q:
+            mask = view["fullName"].str.contains(q, case=False, na=False) | view[
+                "companyEmail"
+            ].str.contains(q, case=False, na=False)
             view = view[mask]
 
-        roster = view.head(500).reset_index(drop=True)
-        labels = [f"{r['fullName']} — {r['department']}" for _, r in roster.iterrows()]
-        if labels:
-            pick = st.selectbox(
-                "Employee detail",
-                range(len(labels)),
-                format_func=lambda i: labels[i],
-            )
-            row = roster.iloc[pick]
-            st.markdown("#### " + str(row["fullName"]))
-            st.caption(str(row["companyEmail"]))
-            d1, d2 = st.columns(2)
-            with d1:
-                st.write("**Department**", row["department"])
-                st.write("**Job title**", row["jobTitle"])
-                st.write("**Office**", row["officeLocation"])
-                st.write("**Region**", row["region"])
-            with d2:
-                st.write("**Salary**", f"{row['currentSalary']:,.0f} {row['currentSalaryCurrency']}")
-                st.write("**USD salary**", fmt_usd(float(row["usdCurrentSalary"])))
-                st.write("**Eligible**", "Yes" if row["eligibility"] else "No")
-                st.write(
-                    "**Rec. raise**",
-                    f"{float(row['recRaisePctMin'])*100:.1f}% – {float(row['recRaisePctMax'])*100:.1f}%",
-                )
+        export_df = view.head(1000)
+        xlsx_buf = io.BytesIO()
+        with pd.ExcelWriter(xlsx_buf, engine="openpyxl") as writer:
+            export_df.to_excel(writer, index=False, sheet_name="employees")
 
-        show = [
-            "fullName",
-            "companyEmail",
-            "department",
-            "jobTitle",
-            "currentSalaryCurrency",
-            "currentSalary",
-            "usdCurrentSalary",
-            "eligibility",
-            "recBonusPctMin",
-            "recBonusPctMax",
-            "recRaisePctMin",
-            "recRaisePctMax",
-        ]
-        st.dataframe(view[show], use_container_width=True, hide_index=True)
-        buf = io.BytesIO()
-        view.to_csv(buf, index=False)
-        st.download_button(
-            "Download CSV",
-            buf.getvalue(),
-            file_name="cip_employees.csv",
-            mime="text/csv",
+        with bar_c:
+            st.markdown("<div style='height:0.35rem'></div>", unsafe_allow_html=True)
+            st.download_button(
+                "Export XLSX",
+                xlsx_buf.getvalue(),
+                file_name="employees_export.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+        show_html(
+            f"""
+            <div class="glass-section">
+                <div class="glass-section-body">
+                    {render_employees_roster_table(export_df)}
+                </div>
+            </div>
+            """
         )
 
 elif page == "Departments":

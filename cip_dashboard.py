@@ -174,6 +174,51 @@ def render_metric_row(
     return f'<div class="{col_class}">{"".join(cards)}</div>'
 
 
+def render_employees_roster_table(view: pd.DataFrame) -> str:
+    """Employees list table (matches src/app/employees/page.tsx)."""
+    if view.empty:
+        return '<p class="muted">No employees match your search.</p>'
+    rows_html = []
+    for _, e in view.iterrows():
+        name = html.escape(str(e["fullName"]))
+        email = html.escape(str(e["companyEmail"]))
+        eligible = bool(e.get("eligibility"))
+        badge = (
+            '<span class="badge badge-yes">Yes</span>'
+            if eligible
+            else '<span class="badge badge-no">No</span>'
+        )
+        bonus_pct = float(e.get("bonusAwardedPct", 0) or 0) * 100
+        raise_pct = float(e.get("salaryPercentage", 0) or 0) * 100
+        cur = html.escape(str(e.get("currentSalaryCurrency", "")))
+        salary_amt = f"{float(e.get('currentSalary', 0)):,.0f}"
+        rows_html.append(
+            f"""<tr>
+            <td><span class="name">{name}</span><div class="email">{email}</div></td>
+            <td class="dept-cell">{html.escape(str(e.get("department", "")))}</td>
+            <td class="num">{cur} {salary_amt}</td>
+            <td class="num">{bonus_pct:.1f}%</td>
+            <td class="num">{float(e.get("sumOfBonus", 0)):,.0f}</td>
+            <td class="num">{raise_pct:.1f}%</td>
+            <td class="num">{float(e.get("salaryIncreaseAmount", 0)):,.0f}</td>
+            <td>{badge}</td>
+            <td class="muted-cell">{html.escape(str(e.get("userStatus", "")))}</td>
+            </tr>"""
+        )
+    return f"""
+    <div class="table-scroll">
+    <table class="cip-table cip-table-roster">
+      <thead><tr>
+        <th>Name</th><th>Department</th><th>Salary</th>
+        <th>Bonus %</th><th>Bonus amt</th><th>Raise %</th><th>Raise amt</th>
+        <th>Eligible</th><th>Status</th>
+      </tr></thead>
+      <tbody>{"".join(rows_html)}</tbody>
+    </table>
+    </div>
+    """
+
+
 def render_department_employees_table(sub: pd.DataFrame) -> str:
     if sub.empty:
         return '<p class="muted">No employees found for this department.</p>'
