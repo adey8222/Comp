@@ -248,7 +248,16 @@ def normalize_dataframe(raw: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     return pd.DataFrame(rows), errors
 
 
+def _rewind_upload(uploaded: Any) -> None:
+    if hasattr(uploaded, "seek"):
+        try:
+            uploaded.seek(0)
+        except Exception:
+            pass
+
+
 def load_and_normalize(uploaded: Any) -> tuple[pd.DataFrame, list[str]]:
+    _rewind_upload(uploaded)
     name = (getattr(uploaded, "name", None) or "").lower()
     if name.endswith(".csv"):
         raw = pd.read_csv(uploaded)

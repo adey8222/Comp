@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html as html_lib
 import io
+import json
 
 import pandas as pd
 import streamlit as st
@@ -23,7 +24,7 @@ from cip_dashboard import (
     render_department_table,
     render_metric_row,
 )
-from cip_normalize import load_and_normalize
+from cip_import import commit_merge_by_email, preview_import
 
 st.set_page_config(
     page_title="Compensation Intelligence Platform",
@@ -120,6 +121,38 @@ h1, h2, h3 { color: #f8fafc !important; }
     border: 1px solid rgba(34, 211, 238, 0.35); color: #f8fafc;
 }
 div[data-testid="stDataFrame"] { border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; }
+.import-ingress {
+    padding: 1.5rem; margin-bottom: 1rem;
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 20px;
+    background: rgba(15,23,42,0.55);
+}
+.import-ingress h2 { margin: 0 0 0.5rem; font-size: 1.125rem; color: #fafafa; }
+.import-ingress p { margin: 0; color: #a1a1aa; font-size: 0.875rem; line-height: 1.6; }
+.import-ingress strong { color: #e4e4e7; }
+div[data-testid="stFileUploader"] {
+    padding: 2rem 1.5rem !important; margin-bottom: 1rem !important;
+    border: 2px dashed rgba(34,211,238,0.25) !important;
+    border-radius: 20px !important;
+    background: rgba(15,23,42,0.35) !important;
+}
+.import-message {
+    padding: 0.85rem 1.25rem; margin-bottom: 1rem;
+    border: 1px solid rgba(34,211,238,0.2); border-radius: 16px;
+    background: rgba(15,23,42,0.55); color: #a5f3fc; font-size: 0.875rem;
+}
+.import-preview {
+    max-height: 520px; overflow: auto; padding: 1.25rem;
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 20px;
+    background: rgba(15,23,42,0.55);
+    font-family: ui-monospace, monospace; font-size: 0.75rem;
+    line-height: 1.6; color: #a1a1aa; white-space: pre-wrap;
+}
+div[data-testid="stFileUploader"] section {
+    border: none !important; padding: 0 !important;
+}
+div[data-testid="stFileUploader"] label p {
+    color: #a1a1aa !important; font-size: 0.8rem !important;
+}
 </style>
 """
 
@@ -133,6 +166,9 @@ def init_session() -> None:
         "data_source": None,
         "selected_employee_idx": 0,
         "dept_focus": None,
+        "import_message": None,
+        "import_preview": None,
+        "import_file_sig": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -250,39 +286,100 @@ if page == "Dashboard":
         )
 
 elif page == "Import":
-    st.header("Import")
-    st.markdown(
-        "Replace the in-memory roster with a new upload, or reset to the **bundled** dataset shipped in this repo."
+    show_html(
+        """
+        <div class="import-ingress">
+            <h2>Data ingress</h2>
+            <p>
+                Drop CSV / XLSX. Headers remap automatically.
+                <strong>Commit merges</strong> by <strong>company email</strong>:
+                only people in your file are created or updated; everyone else stays as-is.
+            </p>
+        </div>
+        """
     )
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("Reset to bundled dataset", type="secondary"):
-            st.session_state.employees = cached_bundled_employees()
-            st.session_state.data_source = "bundled"
-            st.session_state.import_errors = []
-            st.rerun()
-    with col_b:
-        if st.button("Clear data", type="secondary"):
-            st.session_state.employees = None
-            st.session_state.data_source = None
-            st.rerun()
 
-    up = st.file_uploader("Spreadsheet", type=["csv", "xls", "xlsx"])
-    if up is not None and st.button("Load & normalize", type="primary"):
-        with st.spinner("Parsing…"):
-            loaded, errs = load_and_normalize(up)
-        st.session_state.employees = loaded if len(loaded) else None
-        st.session_state.import_errors = errs
-        st.session_state.data_source = "upload" if len(loaded) else None
-        if len(loaded):
-            st.success(f"Loaded {len(loaded):,} employees.")
-            st.rerun()
-        else:
-            st.error("No valid rows imported.")
-        if errs:
-            st.warning(f"{len(errs)} row(s) skipped.")
-            with st.expander("Row errors"):
-                st.code("\n".join(errs[:50]) + ("\n…" if len(errs) > 50 else ""))
+    up = st.file_uploader(
+        "Choose file",
+        type=["csv", "xls", "xlsx"],
+        label_visibility="visible",
+        key="import_file",
+    )
+
+    if up is not None:
+        sig = (up.name, up.size)
+        if st.session_state.import_file_sig != sig:
+            with st.spinner("Previewing…"):
+                try:
+                    prev = preview_import(up)
+                    st.session_state.import_preview = prev
+                    st.session_state.import_file_sig = sig
+                    st.session_state.import_message = (
+                        f"Preview OK: {prev['okCount']} rows, {prev['errorCount']} errors"
+                    )
+                except Exception as ex:
+                    st.session_state.import_preview = None
+                    st.session_state.import_message = str(ex)
+
+        commit = st.button("Commit to database", type="primary", use_container_width=False)
+        if commit:
+            with st.spinner("Committing…"):
+                merged, msg, errs = commit_merge_by_email(st.session_state.employees, up)
+            if merged is not None and not merged.empty and "Merge complete" in msg:
+                st.session_state.employees = merged
+                st.session_state.data_source = "upload"
+                st.session_state.import_errors = errs
+                st.session_state.import_message = msg
+                st.rerun()
+            else:
+                st.session_state.import_message = msg
+                st.session_state.import_errors = errs
+    else:
+        if st.session_state.import_file_sig is not None:
+            st.session_state.import_file_sig = None
+            st.session_state.import_preview = None
+
+    if st.session_state.import_message:
+        show_html(
+            f'<div class="import-message">{html_lib.escape(st.session_state.import_message)}</div>'
+        )
+
+    prev = st.session_state.import_preview
+    if prev:
+        preview_json = json.dumps(
+            {
+                "fileName": prev.get("fileName"),
+                "okCount": prev.get("okCount"),
+                "errorCount": prev.get("errorCount"),
+                "errors": prev.get("errors"),
+                "preview": prev.get("preview"),
+            },
+            indent=2,
+            default=str,
+        )
+        show_html(f'<pre class="import-preview">{html_lib.escape(preview_json)}</pre>')
+
+    with st.expander("Advanced — reset or clear roster"):
+        st.caption(
+            "Bundled data loads automatically on startup. Use these only if you need to "
+            "discard uploads and return to the repo dataset."
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Reset to bundled dataset", use_container_width=True):
+                st.session_state.employees = cached_bundled_employees()
+                st.session_state.data_source = "bundled"
+                st.session_state.import_errors = []
+                st.session_state.import_message = "Restored bundled dataset."
+                st.session_state.import_preview = None
+                st.rerun()
+        with c2:
+            if st.button("Clear all data", use_container_width=True):
+                st.session_state.employees = None
+                st.session_state.data_source = None
+                st.session_state.import_message = "Roster cleared."
+                st.session_state.import_preview = None
+                st.rerun()
 
 elif page == "Employees":
     st.header("Employees")
