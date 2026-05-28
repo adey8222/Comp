@@ -152,6 +152,71 @@ def render_department_table(rows: list[dict[str, Any]]) -> str:
     """
 
 
+def render_metric_row(
+    items: list[tuple[str, str, str | None]],
+    *,
+    columns: int = 3,
+) -> str:
+    """Single HTML row of metric cards (avoids Streamlit column HTML escaping)."""
+    cards = []
+    for title, value, hint in items:
+        hint_html = (
+            f'<div class="metric-hint">{html.escape(hint)}</div>' if hint else ""
+        )
+        cards.append(
+            f"""<div class="metric-card">
+            <div class="small-label">{html.escape(title)}</div>
+            {hint_html}
+            <div class="big-number">{html.escape(value)}</div>
+            </div>"""
+        )
+    col_class = f"metric-row metric-row-{columns}"
+    return f'<div class="{col_class}">{"".join(cards)}</div>'
+
+
+def render_department_employees_table(sub: pd.DataFrame) -> str:
+    if sub.empty:
+        return '<p class="muted">No employees found for this department.</p>'
+    rows_html = []
+    for _, e in sub.iterrows():
+        name = html.escape(str(e["fullName"]))
+        email = html.escape(str(e["companyEmail"]))
+        eligible = bool(e.get("eligibility"))
+        badge = (
+            '<span class="badge badge-yes">Yes</span>'
+            if eligible
+            else '<span class="badge badge-no">No</span>'
+        )
+        bonus_pct = float(e.get("bonusAwardedPct", 0) or 0) * 100
+        raise_pct = float(e.get("salaryPercentage", 0) or 0) * 100
+        rows_html.append(
+            f"""<tr>
+            <td><span class="name">{name}</span><div class="email">{email}</div></td>
+            <td>{html.escape(str(e.get("jobTitle", "")))}</td>
+            <td class="num">{html.escape(str(e.get("currentSalaryCurrency", "")))} {float(e.get("currentSalary", 0)):,.0f}</td>
+            <td class="num">{fmt_usd(float(e.get("usdCurrentSalary", 0)))}</td>
+            <td class="num">{bonus_pct:.1f}%</td>
+            <td class="num">{float(e.get("sumOfBonus", 0)):,.0f}</td>
+            <td class="num">{raise_pct:.1f}%</td>
+            <td class="num">{float(e.get("salaryIncreaseAmount", 0)):,.0f}</td>
+            <td>{badge}</td>
+            <td class="muted-cell">{html.escape(str(e.get("userStatus", "")))}</td>
+            </tr>"""
+        )
+    return f"""
+    <div class="table-scroll">
+    <table class="cip-table cip-table-wide">
+      <thead><tr>
+        <th>Name</th><th>Job title</th><th>Salary</th><th>USD salary</th>
+        <th>Bonus %</th><th>Bonus</th><th>Raise %</th><th>Raise amt</th>
+        <th>Eligible</th><th>Status</th>
+      </tr></thead>
+      <tbody>{"".join(rows_html)}</tbody>
+    </table>
+    </div>
+    """
+
+
 def load_bundled_dataset() -> tuple[pd.DataFrame, list[str]]:
     if not BUNDLED_DATA_PATH.is_file():
         return pd.DataFrame(), [f"Bundled data not found: {BUNDLED_DATA_PATH}"]

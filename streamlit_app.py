@@ -7,6 +7,7 @@ Deploy: streamlit_app.py + requirements.txt + cip_normalize.py + cip_dashboard.p
 
 from __future__ import annotations
 
+import html as html_lib
 import io
 
 import pandas as pd
@@ -18,7 +19,9 @@ from cip_dashboard import (
     fmt_usd,
     load_bundled_dataset,
     render_currency_table,
+    render_department_employees_table,
     render_department_table,
+    render_metric_row,
 )
 from cip_normalize import load_and_normalize
 
@@ -60,6 +63,17 @@ h1, h2, h3 { color: #f8fafc !important; }
 }
 .metric-hint { color: #52525b; font-size: 0.6rem; margin-bottom: 0.25rem; }
 .big-number { color: #fafafa; font-size: 1.75rem; font-weight: 700; }
+.metric-row {
+    display: grid; gap: 1rem; margin-bottom: 1.25rem;
+}
+.metric-row-3 { grid-template-columns: repeat(3, 1fr); }
+.metric-row-5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1100px) {
+    .metric-row-5 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+    .metric-row-3, .metric-row-5 { grid-template-columns: 1fr; }
+}
 .glass-section {
     border: 1px solid rgba(255,255,255,0.08); border-radius: 20px;
     background: rgba(15,23,42,0.5); margin-bottom: 1.25rem; overflow: hidden;
@@ -85,6 +99,22 @@ h1, h2, h3 { color: #f8fafc !important; }
     color: #a5f3fc; border-bottom: 1px dotted rgba(34,211,238,0.5); cursor: help;
 }
 .muted { color: #71717a; padding: 1rem 1.25rem; }
+.dept-filter-panel {
+    padding: 1.25rem 1.5rem; margin-bottom: 1.25rem;
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 20px;
+    background: rgba(15,23,42,0.5);
+}
+.table-scroll { overflow-x: auto; }
+.cip-table-wide { min-width: 1100px; font-size: 0.8125rem; }
+.cip-table .name { color: #67e8f9; font-weight: 500; }
+.cip-table .email { color: #71717a; font-size: 0.75rem; margin-top: 0.15rem; }
+.badge {
+    border-radius: 9999px; padding: 0.15rem 0.5rem;
+    font-size: 0.65rem; font-weight: 600; text-transform: uppercase;
+}
+.badge-yes { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+.badge-no { background: rgba(100,116,139,0.15); color: #94a3b8; }
+.muted-cell { color: #71717a; }
 .stButton > button[kind="primary"] {
     background: linear-gradient(135deg, #0891b2, #6366f1);
     border: 1px solid rgba(34, 211, 238, 0.35); color: #f8fafc;
@@ -102,6 +132,7 @@ def init_session() -> None:
         "import_errors": [],
         "data_source": None,
         "selected_employee_idx": 0,
+        "dept_focus": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -126,32 +157,25 @@ def ensure_data_loaded() -> None:
         st.session_state.import_errors = []
 
 
-def metric_card(title: str, value: str, hint: str = "") -> None:
-    hint_html = f'<div class="metric-hint">{hint}</div>' if hint else ""
-    st.markdown(
-        f"""
-        <div class="metric-card">
-            <div class="small-label">{title}</div>
-            {hint_html}
-            <div class="big-number">{value}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+def show_html(html: str) -> None:
+    """Render HTML reliably (st.columns breaks unsafe_allow_html on markdown)."""
+    if hasattr(st, "html"):
+        st.html(html)
+    else:
+        st.markdown(html, unsafe_allow_html=True)
 
 
 def glass_section(title: str, subtitle: str, body_html: str) -> None:
-    st.markdown(
+    show_html(
         f"""
         <div class="glass-section">
             <div class="glass-section-head">
-                <h3>{title}</h3>
-                <p>{subtitle}</p>
+                <h3>{html_lib.escape(title)}</h3>
+                <p>{html_lib.escape(subtitle)}</p>
             </div>
             <div class="glass-section-body">{body_html}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -197,21 +221,22 @@ if page == "Dashboard":
         )
     else:
         stats = compute_dashboard_stats(df)
-        c1, c2, c3, c4, c5 = st.columns(5)
-        with c1:
-            metric_card("Total employees", f"{stats.total_employees:,}", "active cycle")
-        with c2:
-            metric_card("Eligible", f"{stats.eligible_count:,}", "flagged in source")
-        with c3:
-            metric_card("Payroll (USD)", fmt_usd(stats.total_payroll_usd), "normalized")
-        with c4:
-            metric_card(
-                "Bonus + raises (USD)",
-                fmt_usd(stats.total_bonus_usd + stats.total_raise_usd),
-                "normalized",
+        show_html(
+            render_metric_row(
+                [
+                    ("Total employees", f"{stats.total_employees:,}", "active cycle"),
+                    ("Eligible", f"{stats.eligible_count:,}", "flagged in source"),
+                    ("Payroll (USD)", fmt_usd(stats.total_payroll_usd), "normalized"),
+                    (
+                        "Bonus + raises (USD)",
+                        fmt_usd(stats.total_bonus_usd + stats.total_raise_usd),
+                        "normalized",
+                    ),
+                    ("Departments", str(len(stats.departments)), "unique"),
+                ],
+                columns=5,
             )
-        with c5:
-            metric_card("Departments", str(len(stats.departments)), "unique")
+        )
 
         glass_section(
             "Currency mix",
@@ -325,40 +350,48 @@ elif page == "Employees":
         )
 
 elif page == "Departments":
-    st.header("Departments")
     if df is None or df.empty:
         st.info("No roster loaded.")
     else:
-        stats = compute_dashboard_stats(df)
-        glass_section(
-            "All departments",
-            "Payroll, bonus, and merit pools in USD",
-            render_department_table(stats.departments),
-        )
-        dept = st.selectbox("Drill down", sorted(df["department"].unique()))
-        sub = df[df["department"] == dept]
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            metric_card("Headcount", str(len(sub)))
-        with c2:
-            metric_card("Payroll USD", fmt_usd(sub["usdCurrentSalary"].sum()))
-        with c3:
-            metric_card(
-                "Bonus + raise USD",
-                fmt_usd(sub["usdSumOfBonus"].sum() + sub["usdSalaryIncreaseAmt"].sum()),
-            )
-        st.dataframe(
-            sub[
+        depts = sorted(df["department"].unique())
+        if st.session_state.dept_focus not in depts:
+            st.session_state.dept_focus = depts[0]
+
+        with st.form("dept_filter", border=False):
+            fc1, fc2 = st.columns([5, 1])
+            with fc1:
+                picked = st.selectbox(
+                    "Department",
+                    depts,
+                    index=depts.index(st.session_state.dept_focus),
+                )
+            with fc2:
+                st.markdown("<div style='height:1.6rem'></div>", unsafe_allow_html=True)
+                submitted = st.form_submit_button("Focus", type="primary", use_container_width=True)
+        if submitted:
+            st.session_state.dept_focus = picked
+            st.rerun()
+
+        dept = st.session_state.dept_focus
+        sub = df[df["department"] == dept].sort_values("fullName")
+        payroll = float(sub["usdCurrentSalary"].sum())
+        bonus_raise = float(sub["usdSumOfBonus"].sum() + sub["usdSalaryIncreaseAmt"].sum())
+
+        show_html(
+            render_metric_row(
                 [
-                    "fullName",
-                    "jobTitle",
-                    "officeLocation",
-                    "currentSalary",
-                    "currentSalaryCurrency",
-                    "usdCurrentSalary",
-                    "eligibility",
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True,
+                    ("Headcount", str(len(sub)), None),
+                    ("Payroll USD", fmt_usd(payroll), None),
+                    ("Bonus + raise USD", fmt_usd(bonus_raise), None),
+                ],
+                columns=3,
+            )
+        )
+
+        n = len(sub)
+        emp_label = f"{n} employee{'s' if n != 1 else ''} in this department"
+        glass_section(
+            dept,
+            emp_label,
+            render_department_employees_table(sub),
         )
