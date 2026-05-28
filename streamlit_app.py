@@ -162,12 +162,18 @@ div[data-testid="stFileUploader"] label p {
 .cip-table-roster { min-width: 960px; }
 .cip-table .dept-cell { color: #d4d4d8; }
 div[data-testid="stTextInput"] input {
-    background: rgba(0,0,0,0.4) !important;
-    border: 1px solid rgba(255,255,255,0.1) !important;
+    background: #ffffff !important;
+    border: 1px solid rgba(255,255,255,0.35) !important;
     border-radius: 12px !important;
-    color: #f4f4f5 !important;
+    color: #0f172a !important;
 }
-div[data-testid="stTextInput"] input::placeholder { color: #71717a !important; }
+div[data-testid="stTextInput"] input::placeholder {
+    color: #64748b !important;
+}
+div[data-testid="stTextInput"] input:focus {
+    border-color: rgba(34, 211, 238, 0.55) !important;
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.2) !important;
+}
 div[data-testid="stForm"] {
     border: 1px solid rgba(255,255,255,0.08) !important;
     border-radius: 20px !important;
